@@ -1,0 +1,13 @@
+[package]
+name = "stf"
+version = "1.0.0"
+edition = "2024"
+description = "A Simple Static Site Generator"
+
+[dependencies]
+unicode-segmentation = "1.13.2"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
