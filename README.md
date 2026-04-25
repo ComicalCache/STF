@@ -1,0 +1,163 @@
+
+
+
+
+
+
+
+
+
+
+               Style Tag Format - parser and front-end generator                
+
+                                  ComicalCache                                  
+                                   April 2026                                   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   STF is a simple file format that can easily be parsed and used to generate   
+   different front-ends. This document serves as an example and self-serving    
+                                 documentation.                                 
+
+
+
+
+
+
+April 25th, 2026
+                                                                          README
+
+                               Table Of Contents                                
+
+Hello World .................................................................. 1
+Formatting ................................................................... 1
+Printing (lol) ............................................................... 1
+Code ......................................................................... 2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+April 25th, 2026
+                                                                          README
+
+                                  Hello World                                   
+
+STF, as seen on the previous pages, supports a cover page, site headers and
+footers, as well as an automatically generated table of contents. The table of
+contents gathers all headings and displays them in line with the page they are
+on.
+
+                                   Formatting                                   
+
+Linebreaks and pagebreaks can be explicitly set. Additionally, the current
+implementation automatically layouts and paginates the contents. It uses a
+simple word wrapping algorithm that keeps special characters, which directly
+border letters, on the same line. This avoids having punctuation begin a new
+line. In the text sections and the notes of the cover section, single new lines
+are ignored to aid writing longer paragraphs. Double new lines are interpreted
+as a singular new line.
+
+                                 Printing (lol)                                 
+
+In plain text, linebreaks insert a form feed character to (hopefully) aid in
+physically printing the generated content, if so desired.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                        [Page 1]
+
+April 25th, 2026
+                                                                          README
+
+                                      Code                                      
+
+STF also supports code blocks. In plain text the only difference is seen in not
+stripping leading whitespace from code. In HTML code has a visual higlight to
+more easily distinguish it.
+
+for i in 0..15 {
+    println!("Line {i}");
+}
+
+The above example showcases code, in plain text with leading whitespace, in HTML
+with an additional visual highlight.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                        [Page 2]
