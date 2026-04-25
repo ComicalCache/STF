@@ -1,51 +1,77 @@
-// This file implements a parser for the Style Tag Format. The Style Tag Format is a very simple file format to add
-// minimal styling to text.
-//
-// Style Tag Format:
-// - Tags specify the following lines' (segment) style until the next tag
-//      => at least one tag must be specified
-//      => the first line in the file must be a tag
-// - Tags have the syntax >TAG< using inward pointing angled brackets with the tag name inbetween and must be the only
-//      text on a line.
-// - Tags may impose further syntax rules, those are only valid in the segment following the tag.
-
 use crate::util;
 
-/// This parser supported tags. Tags are spelt lowercase!
+/// This type defines tags for the Style Tag Format. The Style Tag Format is a very simple file format to add minimal
+/// styling to text.
+///
+/// Style Tag Format:
+/// - Tags specify the following lines' (segment) style until the next tag
+///      => at least one tag must be specified
+///      => the first line in the file must be a tag
+/// - Tags have the syntax >tag< using inward pointing angled brackets with the tag name inbetween and must be the only
+///      text on a line.
+/// - Tags may impose further syntax rules, those are only valid in the segment following the tag.
 pub enum Tag<'s> {
+    /// A cover page containing a title, author, date and free form notes.
     Cover {
+        // Single line.
         title: &'s str,
+        // Single line.
         author: &'s str,
+        // Single line.
         date: &'s str,
-        /// - Single newlines should be ignored
-        /// - Double newlines should be interpreted as a single newline
-        /// - Any other configuration of consecutive newlines is undefined
+        // Multiple lines:
+        // - Single newlines should be ignored
+        // - Double newlines should be interpreted as a single newline
+        // - Any other configuration of consecutive newlines is undefined
         notes: String,
     },
+    /// Configures the contents of page headers.
     HeaderConfig {
+        // Single line.
         date: &'s str,
+        // Single line.
         title: &'s str,
     },
+    /// A generated Table of Contents using Headings to populate it.
     TableOfContents,
+    /// Insert a header at the current position.
     Header,
+    /// Linebreak marker.
     Linebreak,
+    /// Page break marker.
     Pagebreak,
+    /// A heading like e.g. chapter title.
     Heading {
+        // Multiple lines:
+        // - Single newlines should be ignored
+        // - Double newlines should be interpreted as a single newline
+        // - Any other configuration of consecutive newlines is undefined
         content: String,
     },
+    /// Plain text.
     Text {
-        /// - Single newlines should be ignored
-        /// - Double newlines should be interpreted as a single newline
-        /// - Any other configuration of consecutive newlines is undefined
+        // Multiple lines:
+        // - Single newlines should be ignored
+        // - Double newlines should be interpreted as a single newline
+        // - Any other configuration of consecutive newlines is undefined
         content: String,
     },
+    /// Code.
     Code {
+        // Multiple lines.
         content: &'s str,
     },
+    /// A hyperlink.
     Link {
+        // Single line.
         url: &'s str,
+        // Single line.
         abbrev: &'s str,
-        content: &'s str,
+        // Multiple lines:
+        // - Single newlines should be ignored
+        // - Double newlines should be interpreted as a single newline
+        // - Any other configuration of consecutive newlines is undefined
+        content: String,
     },
 }
 
@@ -113,7 +139,7 @@ pub fn parse(text: &str) -> impl Iterator<Item = Tag<'_>> + Clone + '_ {
             "link" => Some(Tag::Link {
                 url: content.next().unwrap_or(""),
                 abbrev: content.next().unwrap_or(""),
-                content: content.remainder().unwrap_or("").trim_end(),
+                content: util::collapse(content.remainder().unwrap_or("").trim_end()),
             }),
             _ => None,
         }

@@ -32,8 +32,8 @@
 
 
    STF is a simple file format that can easily be parsed and used to generate   
-   different front-ends. This document serves as an example and self-serving    
-                                 documentation.                                 
+           different front-ends. This document serves as an example.            
+
 
 
 
