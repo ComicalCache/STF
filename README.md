@@ -48,8 +48,8 @@ April 25th, 2026
 Hello World .................................................................. 1
 Formatting ................................................................... 1
 Printing (lol) ............................................................... 1
+Modern Technology ............................................................ 1
 Code ......................................................................... 2
-
 
 
 
@@ -106,9 +106,9 @@ as a singular new line.
 In plain text, linebreaks insert a form feed character to (hopefully) aid in
 physically printing the generated content, if so desired.
 
+                               Modern Technology                                
 
-
-
+STF also supports hyperlinks: https://github.com/ComicalCache/STF
 
 
 
@@ -162,4 +162,5 @@ with an additional visual highlight.
 
 
                                                                         [Page 2]
+
 ```

@@ -41,16 +41,18 @@ impl<'s> Txt<'s> {
         for tag in tags {
             match tag {
                 Tag::Cover { .. } => txt.cover(&mut buff, &tag),
-                Tag::Header { .. } => txt.header(&tag),
+                Tag::HeaderConfig { .. } => txt.header_config(&tag),
                 Tag::TableOfContents => {
                     toc_idx = Some(buff.len());
                     toc_curr_page_row = Some(txt.curr_page_row);
                 }
+                Tag::Header => txt.header(&mut buff),
                 Tag::Linebreak => txt.linebreak(&mut buff, true, true, true),
                 Tag::Pagebreak => txt.pagebreak(&mut buff, true, true, true),
                 Tag::Heading { .. } => txt.heading(&mut buff, tag),
                 Tag::Text { .. } => txt.text(&mut buff, &tag),
                 Tag::Code { .. } => txt.code(&mut buff, &tag),
+                Tag::Link { .. } => txt.link(&mut buff, &tag),
             }
         }
         txt.pagebreak(&mut buff, true, false, false);
@@ -123,8 +125,8 @@ impl<'s> Txt<'s> {
         self.pagebreak(buff, false, true, true);
     }
 
-    fn header(&mut self, tag: &Tag<'s>) {
-        let Tag::Header { date, title } = tag else { unreachable!() };
+    fn header_config(&mut self, tag: &Tag<'s>) {
+        let Tag::HeaderConfig { date, title } = tag else { unreachable!() };
 
         let date: Vec<&'s str> = util::wrap_paragraph(date, self.line_width).collect();
         let title: Vec<&'s str> = util::wrap_paragraph(title, self.line_width).collect();
@@ -134,6 +136,59 @@ impl<'s> Txt<'s> {
         self.content_rows -= self.header_rows;
 
         self.header = Some(header);
+    }
+
+    fn table_of_contents(&mut self, buff: &mut String) {
+        if self.headings.is_empty() {
+            return;
+        }
+
+        let _ = write!(buff, "{:^width$}", "Table Of Contents", width = self.line_width);
+        self.linebreak(buff, false, false, true);
+
+        let max_page_num_width = self.headings.last().unwrap().1.checked_ilog10().unwrap_or(0) as usize + 1;
+
+        let mut last_line = "";
+        // Cheap clone because of &str.
+        for (title, page) in &self.headings.clone() {
+            // Minus three for enough space for at least one dot.
+            for line in util::wrap_paragraph(title, self.line_width - max_page_num_width - 3) {
+                self.linebreak(buff, false, false, true);
+
+                let _ = write!(buff, "{line}");
+
+                last_line = line;
+            }
+
+            let last_line_graphemes = last_line.graphemes(true).count();
+            let _ = write!(
+                buff,
+                " {:.>width$} {page:>max_page_num_width$}",
+                "",
+                width = self.line_width - last_line_graphemes - max_page_num_width - 2
+            );
+        }
+
+        self.pagebreak(buff, false, false, true);
+    }
+
+    fn header(&mut self, buff: &mut String) {
+        if let Some(header) = &self.header {
+            // TODO: add error if write_heder == true but no header was specified.
+
+            for line in &header.date {
+                let _ = writeln!(buff, "{line}");
+                self.curr_page_row += 1;
+            }
+            for line in &header.title {
+                let _ = writeln!(buff, "{line:>width$}", width = self.line_width);
+                self.curr_page_row += 1;
+            }
+
+            // Add a line of padding bellow the header.
+            buff.push('\n');
+            self.curr_page_row += 1;
+        }
     }
 
     fn linebreak(&mut self, buff: &mut String, write_page_number: bool, increase_page_count: bool, write_header: bool) {
@@ -169,21 +224,8 @@ impl<'s> Txt<'s> {
             self.curr_page_number += 1;
         }
 
-        if write_header && let Some(header) = &self.header {
-            // TODO: add error if write_heder == true but no header was specified.
-
-            for line in &header.date {
-                let _ = writeln!(buff, "{line}");
-                self.curr_page_row += 1;
-            }
-            for line in &header.title {
-                let _ = writeln!(buff, "{line:>width$}", width = self.line_width);
-                self.curr_page_row += 1;
-            }
-
-            // Add a line of padding bellow the header.
-            buff.push('\n');
-            self.curr_page_row += 1;
+        if write_header {
+            self.header(buff);
         }
     }
 
@@ -222,37 +264,17 @@ impl<'s> Txt<'s> {
         }
     }
 
-    fn table_of_contents(&mut self, buff: &mut String) {
-        if self.headings.is_empty() {
+    fn link(&mut self, buff: &mut String, tag: &Tag<'_>) {
+        let Tag::Link { url, content, .. } = tag else { unreachable!() };
+
+        if content.is_empty() {
             return;
         }
 
-        let _ = write!(buff, "{:^width$}", "Table Of Contents", width = self.line_width);
-        self.linebreak(buff, false, false, true);
-
-        let max_page_num_width = self.headings.last().unwrap().1.checked_ilog10().unwrap_or(0) as usize + 1;
-
-        let mut last_line = "";
-        // Cheap clone because of &str.
-        for (title, page) in &self.headings.clone() {
-            // Minus three for enough space for at least one dot.
-            for line in util::wrap_paragraph(title, self.line_width - max_page_num_width - 3) {
-                self.linebreak(buff, false, false, true);
-
-                let _ = write!(buff, "{line}");
-
-                last_line = line;
-            }
-
-            let last_line_graphemes = last_line.graphemes(true).count();
-            let _ = write!(
-                buff,
-                " {:.>width$} {page:>max_page_num_width$}",
-                "",
-                width = self.line_width - last_line_graphemes - max_page_num_width - 2
-            );
+        let full_text = format!("{content}: {url}");
+        for line in util::wrap_paragraph(&full_text, self.line_width) {
+            buff.push_str(line);
+            self.linebreak(buff, true, true, true);
         }
-
-        self.pagebreak(buff, false, false, true);
     }
 }

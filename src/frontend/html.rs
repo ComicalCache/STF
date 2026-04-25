@@ -56,16 +56,18 @@ impl<'s> Html<'s> {
         for tag in tags {
             match tag {
                 Tag::Cover { .. } => html.cover(&mut buff, &tag),
-                Tag::Header { .. } => html.header(&tag),
+                Tag::HeaderConfig { .. } => html.header_config(&tag),
                 Tag::TableOfContents => {
                     toc_idx = Some(buff.len());
                     toc_curr_page_row = Some(html.curr_page_row);
                 }
+                Tag::Header => html.header(&mut buff),
                 Tag::Linebreak => html.linebreak(&mut buff, true, true, true),
                 Tag::Pagebreak => html.pagebreak(&mut buff, true, true, true),
                 Tag::Heading { .. } => html.heading(&mut buff, tag),
                 Tag::Text { .. } => html.text(&mut buff, &tag),
                 Tag::Code { .. } => html.code(&mut buff, &tag),
+                Tag::Link { .. } => html.link(&mut buff, &tag),
             }
         }
         html.pagebreak(&mut buff, true, false, false);
@@ -139,8 +141,8 @@ impl<'s> Html<'s> {
         self.pagebreak(buff, false, true, true);
     }
 
-    fn header(&mut self, tag: &Tag<'s>) {
-        let Tag::Header { date, title } = tag else { unreachable!() };
+    fn header_config(&mut self, tag: &Tag<'s>) {
+        let Tag::HeaderConfig { date, title } = tag else { unreachable!() };
 
         let date: Vec<&'s str> = util::wrap_paragraph(date, self.line_width).collect();
         let title: Vec<&'s str> = util::wrap_paragraph(title, self.line_width).collect();
@@ -150,6 +152,61 @@ impl<'s> Html<'s> {
         self.content_rows -= self.header_rows;
 
         self.header = Some(header);
+    }
+
+    fn table_of_contents(&mut self, buff: &mut String) {
+        if self.headings.is_empty() {
+            return;
+        }
+
+        buff.push_str("<span class=\"box heading align-center\">Table Of Contents</span>");
+        self.linebreak(buff, false, false, true);
+
+        let max_page_num_width = self.headings.last().unwrap().1.checked_ilog10().unwrap_or(0) as usize + 1;
+
+        let mut pre_last_line: usize = 0;
+        let mut last_line = "";
+        // Cheap clone because of &str.
+        for (title, page) in &self.headings.clone() {
+            // Minus three for enough space for at least one dot.
+            for line in util::wrap_paragraph(title, self.line_width - max_page_num_width - 3) {
+                self.linebreak(buff, false, false, true);
+
+                pre_last_line = buff.len();
+                let _ = write!(buff, "<span class=\"box\">{}</span>", util::escape(line));
+
+                last_line = line;
+            }
+
+            buff.truncate(pre_last_line);
+
+            let _ = write!(
+                buff,
+                "<div class=\"box\"><div class=\"toc-row\"><span>{}</span><span class=\"toc-line\"></span><span>{page:>max_page_num_width$}</span></div></div>",
+                util::escape(last_line),
+            );
+        }
+
+        self.pagebreak(buff, false, false, true);
+    }
+
+    fn header(&mut self, buff: &mut String) {
+        if let Some(header) = &self.header {
+            // TODO: add error if write_heder == true but no header was specified.
+
+            for line in &header.date {
+                let _ = write!(buff, "<p>{}</p>", util::escape(line));
+                self.curr_page_row += 1;
+            }
+            for line in &header.title {
+                let _ = write!(buff, "<p class=\"align-right italic\">{}</p>", util::escape(line));
+                self.curr_page_row += 1;
+            }
+
+            // Add a line of padding bellow the header.
+            buff.push_str("<br>");
+            self.curr_page_row += 1;
+        }
     }
 
     fn linebreak(&mut self, buff: &mut String, write_page_number: bool, increase_page_count: bool, write_header: bool) {
@@ -183,21 +240,8 @@ impl<'s> Html<'s> {
             self.curr_page_number += 1;
         }
 
-        if write_header && let Some(header) = &self.header {
-            // TODO: add error if write_heder == true but no header was specified.
-
-            for line in &header.date {
-                let _ = write!(buff, "<p>{}</p>", util::escape(line));
-                self.curr_page_row += 1;
-            }
-            for line in &header.title {
-                let _ = write!(buff, "<p class=\"align-right italic\">{}</p>", util::escape(line));
-                self.curr_page_row += 1;
-            }
-
-            // Add a line of padding bellow the header.
-            buff.push_str("<br>");
-            self.curr_page_row += 1;
+        if write_header {
+            self.header(buff);
         }
     }
 
@@ -239,39 +283,37 @@ impl<'s> Html<'s> {
         buff.push_str("</pre><br>");
     }
 
-    fn table_of_contents(&mut self, buff: &mut String) {
-        if self.headings.is_empty() {
-            return;
-        }
+    fn link(&mut self, buff: &mut String, tag: &Tag<'_>) {
+        let Tag::Link { url, abbrev, content } = tag else { unreachable!() };
 
-        buff.push_str("<span class=\"box heading align-center\">Table Of Contents</span>");
-        self.linebreak(buff, false, false, true);
+        let text = format!("{} ({})", content, abbrev);
 
-        let max_page_num_width = self.headings.last().unwrap().1.checked_ilog10().unwrap_or(0) as usize + 1;
+        // Plus two for the space and opening bracket.
+        let abbrev_start = content.len() + 2;
+        let abbrev_end = abbrev_start + abbrev.len();
 
-        let mut pre_last_line: usize = 0;
-        let mut last_line = "";
-        // Cheap clone because of &str.
-        for (title, page) in &self.headings.clone() {
-            // Minus three for enough space for at least one dot.
-            for line in util::wrap_paragraph(title, self.line_width - max_page_num_width - 3) {
-                self.linebreak(buff, false, false, true);
+        for line in util::wrap_paragraph(&text, self.line_width) {
+            let offset = line.as_ptr() as usize - text.as_ptr() as usize;
 
-                pre_last_line = buff.len();
-                let _ = write!(buff, "<span class=\"box\">{}</span>", util::escape(line));
+            let start = (abbrev_start - offset).min(line.len());
+            let stop = (abbrev_end - offset).min(line.len());
 
-                last_line = line;
+            let before = &line[..start];
+            let inside = &line[start..stop];
+            let after = &line[stop..];
+
+            buff.push_str("<span>");
+            if !before.is_empty() {
+                buff.push_str(&util::escape(before));
             }
-
-            buff.truncate(pre_last_line);
-
-            let _ = write!(
-                buff,
-                "<div class=\"box\"><div class=\"toc-row\"><span>{}</span><span class=\"toc-line\"></span><span>{page:>max_page_num_width$}</span></div></div>",
-                util::escape(last_line),
-            );
+            if !inside.is_empty() {
+                let _ = write!(buff, "<a href=\"{}\">{}</a>", url, util::escape(inside));
+            }
+            if !after.is_empty() {
+                buff.push_str(&util::escape(after));
+            }
+            buff.push_str("</span>");
+            self.linebreak(buff, true, true, true);
         }
-
-        self.pagebreak(buff, false, false, true);
     }
 }

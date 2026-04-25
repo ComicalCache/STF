@@ -22,11 +22,12 @@ pub enum Tag<'s> {
         /// - Any other configuration of consecutive newlines is undefined
         notes: String,
     },
-    Header {
+    HeaderConfig {
         date: &'s str,
         title: &'s str,
     },
     TableOfContents,
+    Header,
     Linebreak,
     Pagebreak,
     Heading {
@@ -39,6 +40,11 @@ pub enum Tag<'s> {
         content: String,
     },
     Code {
+        content: &'s str,
+    },
+    Link {
+        url: &'s str,
+        abbrev: &'s str,
         content: &'s str,
     },
 }
@@ -94,13 +100,21 @@ pub fn parse(text: &str) -> impl Iterator<Item = Tag<'_>> + Clone + '_ {
                 date: content.next().unwrap_or(""),
                 notes: util::collapse(content.remainder().unwrap_or("").trim_end()),
             }),
-            "header" => Some(Tag::Header { date: content.next().unwrap_or(""), title: content.next().unwrap_or("") }),
+            "headerconfig" => {
+                Some(Tag::HeaderConfig { date: content.next().unwrap_or(""), title: content.next().unwrap_or("") })
+            }
             "toc" => Some(Tag::TableOfContents),
+            "header" => Some(Tag::Header),
             "linebreak" => Some(Tag::Linebreak),
             "pagebreak" => Some(Tag::Pagebreak),
             "heading" => Some(Tag::Heading { content: util::collapse(content.remainder().unwrap_or("").trim_end()) }),
             "text" => Some(Tag::Text { content: util::collapse(content.remainder().unwrap_or("").trim_end()) }),
             "code" => Some(Tag::Code { content: content.remainder().unwrap_or("").trim_end() }),
+            "link" => Some(Tag::Link {
+                url: content.next().unwrap_or(""),
+                abbrev: content.next().unwrap_or(""),
+                content: content.remainder().unwrap_or("").trim_end(),
+            }),
             _ => None,
         }
     })

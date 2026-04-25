@@ -1,4 +1,4 @@
->header<
+>headerconfig<
 April 25th, 2026
 README
 
@@ -39,6 +39,16 @@ Printing (lol)
 >text<
 In plain text, linebreaks insert a form feed character to (hopefully) aid in physically printing the generated content,
 if so desired.
+
+>linebreak<
+
+>heading<
+Modern Technology
+
+>link<
+https://github.com/ComicalCache/STF
+github.com
+STF also supports hyperlinks
 
 >pagebreak<
 
