@@ -30,6 +30,11 @@ pub fn collapse(text: &str) -> String {
     result
 }
 
+/// Escapes HTML tag characters.
+pub fn escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
 /// Zero allocation paragraph word wrapping.
 ///
 /// Takes in `text` and returns an iterator over the wrapped lines where each line has less than `width` graphemes.

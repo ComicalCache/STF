@@ -1,15 +1,13 @@
-#![feature(str_lines_remainder)]
-#![feature(str_as_str)]
+#![feature(str_lines_remainder, str_as_str)]
+#![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
 
-mod html;
+mod frontend;
 mod stf;
-mod txt;
 mod util;
 
 use std::{io::Write, path::PathBuf};
 
-use html::Html;
-use txt::Txt;
+use frontend::{html::Html, txt::Txt};
 
 fn main() -> Result<(), usize> {
     let (mut path, file) = if let Some(path) = std::env::args().nth(1) {
@@ -44,7 +42,7 @@ fn main() -> Result<(), usize> {
     let title = format!("#include <cmath/{}>", filename.to_string_lossy());
 
     // Generate HTML.
-    let html = Html::generate(&title, tags.clone(), 80, 40);
+    let html = Html::generate(&title, tags.clone(), 80, 50);
     match std::fs::File::create(&html_path) {
         Ok(mut file) => match write!(file, "{html}") {
             Ok(()) => println!("Wrote {}", html_path.file_name().unwrap().to_string_lossy()),

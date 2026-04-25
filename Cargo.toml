@@ -2,7 +2,7 @@
 name = "stf"
 version = "1.0.0"
 edition = "2024"
-description = "A Simple Static Site Generator"
+description = "Style Tag Format parser and front-end generator"
 
 [dependencies]
 unicode-segmentation = "1.13.2"

@@ -11,7 +11,7 @@
 
 use crate::util;
 
-/// This parser supported tags. If not stated otherwise, newlines are ignored! Tags are spelt lowercase!
+/// This parser supported tags. Tags are spelt lowercase!
 pub enum Tag<'s> {
     Cover {
         title: &'s str,
@@ -92,15 +92,15 @@ pub fn parse(text: &str) -> impl Iterator<Item = Tag<'_>> + Clone + '_ {
                 title: content.next().unwrap_or(""),
                 author: content.next().unwrap_or(""),
                 date: content.next().unwrap_or(""),
-                notes: util::collapse(content.remainder().unwrap_or("")),
+                notes: util::collapse(content.remainder().unwrap_or("").trim_end()),
             }),
             "header" => Some(Tag::Header { date: content.next().unwrap_or(""), title: content.next().unwrap_or("") }),
             "toc" => Some(Tag::TableOfContents),
             "linebreak" => Some(Tag::Linebreak),
             "pagebreak" => Some(Tag::Pagebreak),
-            "heading" => Some(Tag::Heading { content: util::collapse(content.remainder().unwrap_or("")) }),
-            "text" => Some(Tag::Text { content: util::collapse(content.remainder().unwrap_or("")) }),
-            "code" => Some(Tag::Code { content: content.remainder().unwrap_or("") }),
+            "heading" => Some(Tag::Heading { content: util::collapse(content.remainder().unwrap_or("").trim_end()) }),
+            "text" => Some(Tag::Text { content: util::collapse(content.remainder().unwrap_or("").trim_end()) }),
+            "code" => Some(Tag::Code { content: content.remainder().unwrap_or("").trim_end() }),
             _ => None,
         }
     })
