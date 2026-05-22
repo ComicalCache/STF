@@ -21,7 +21,7 @@ impl Cover {
         assert!(matches!(tag, Tag::Cover { .. }));
         let Tag::Cover { title, author, date, notes } = tag else { unreachable!() };
 
-        Cover { title, author, date, notes }
+        Self { title, author, date, notes }
     }
 }
 

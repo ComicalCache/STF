@@ -9,10 +9,10 @@ use crate::{
 pub struct Linebreak {}
 
 impl Linebreak {
-    pub fn new(tag: Tag) -> Self {
+    pub fn new(tag: &Tag) -> Self {
         assert!(matches!(tag, Tag::Linebreak));
 
-        Linebreak {}
+        Self {}
     }
 }
 

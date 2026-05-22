@@ -18,7 +18,7 @@ impl Text {
         assert!(matches!(tag, Tag::Text(_)));
         let Tag::Text(content) = tag else { unreachable!() };
 
-        Text { content }
+        Self { content }
     }
 }
 

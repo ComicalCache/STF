@@ -9,6 +9,8 @@ mod pagebreak;
 mod table_of_contents;
 mod text;
 
+use std::fmt::Write;
+
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
@@ -52,8 +54,8 @@ pub struct HtmlContext {
 }
 
 impl HtmlContext {
-    fn new(width: usize, max_lines: usize) -> Self {
-        HtmlContext { width, max_lines, header: None, headings: Vec::new(), doc: Document::new() }
+    const fn new(width: usize, max_lines: usize) -> Self {
+        Self { width, max_lines, header: None, headings: Vec::new(), doc: Document::new() }
     }
 
     fn new_page(&self) -> Page {
@@ -106,7 +108,7 @@ pub enum HtmlInstruction {
     Pagebreak,
     /// Adds a line of padding.
     Padding,
-    /// Registers a ToC entry at the current page.
+    /// Registers a Table of Contents entry at the current page.
     RegisterToC(String),
 }
 
@@ -118,15 +120,16 @@ pub struct Html {
 }
 
 impl Html {
+    #[allow(clippy::too_many_lines)]
     pub fn generate(title: &str, tags: impl Iterator<Item = Tag>, width: usize, max_lines: usize) -> String {
-        let mut html = Html {
+        let mut html = Self {
             components: tags
                 .map(|tag| match tag {
                     Tag::Cover { .. } => Box::new(Cover::new(tag)) as HtmlComponent,
                     Tag::HeaderConfig { .. } => Box::new(HeaderConfig::new(tag)) as HtmlComponent,
-                    Tag::TableOfContents => Box::new(TableOfContents::new(tag)) as HtmlComponent,
-                    Tag::Linebreak => Box::new(Linebreak::new(tag)) as HtmlComponent,
-                    Tag::Pagebreak => Box::new(Pagebreak::new(tag)) as HtmlComponent,
+                    Tag::TableOfContents => Box::new(TableOfContents::new(&tag)) as HtmlComponent,
+                    Tag::Linebreak => Box::new(Linebreak::new(&tag)) as HtmlComponent,
+                    Tag::Pagebreak => Box::new(Pagebreak::new(&tag)) as HtmlComponent,
                     Tag::Heading { .. } => Box::new(Heading::new(tag)) as HtmlComponent,
                     Tag::Text(_) => Box::new(Text::new(tag)) as HtmlComponent,
                     Tag::Code(_) => Box::new(Code::new(tag)) as HtmlComponent,
@@ -243,7 +246,7 @@ impl Html {
         let assemble = |page: &Page| {
             let mut lines = Vec::with_capacity(page.max_lines);
 
-            lines.extend(page.header().iter().cloned().map(|line| line.data.clone()));
+            lines.extend(page.header().iter().cloned().map(|line| line.data));
             // Pad to the minimum header lines.
             for _ in page.header().len()..page.min_header {
                 lines.push(String::from("<br>"));
@@ -252,7 +255,7 @@ impl Html {
                 lines.push(String::from("<br>"));
             }
 
-            lines.extend(page.body().iter().cloned().map(|line| line.data.clone()));
+            lines.extend(page.body().iter().cloned().map(|line| line.data));
 
             // Padding.
             for _ in 0..page.max_lines.saturating_sub(page.lines()) {
@@ -262,7 +265,7 @@ impl Html {
             for _ in 0..page.footnotes_padding {
                 lines.push(String::from("<br>"));
             }
-            lines.extend(page.footnotes().iter().cloned().map(|line| line.data.clone()));
+            lines.extend(page.footnotes().iter().cloned().map(|line| line.data));
 
             for _ in 0..page.footer_padding {
                 lines.push(String::from("<br>"));
@@ -271,7 +274,7 @@ impl Html {
             for _ in page.footer().len()..page.min_footer {
                 lines.push(String::from("<br>"));
             }
-            lines.extend(page.footer().iter().cloned().map(|line| line.data.clone()));
+            lines.extend(page.footer().iter().cloned().map(|line| line.data));
 
             lines.join("")
         };
@@ -281,7 +284,7 @@ impl Html {
             .doc
             .cover
             .map(|page| assemble(&page) + "<br><div class=\"pagebreak\"></div><br>")
-            .unwrap_or(String::new());
+            .unwrap_or_default();
         let pages = html
             .ctx
             .doc
@@ -294,10 +297,11 @@ impl Html {
 
         let mut final_html = String::new();
         final_html.push_str("<!DOCTYPE html><html><head><meta charset=\"UTF-8\">");
-        final_html.push_str(&format!("<title>{}</title>", util::escape(title)));
-        final_html.push_str(&format!(
-            "<style>body{{font-family:monospace}}.main{{max-width:{width}ch;width:100%;margin:0 auto}}.align-center{{text-align:center}}.align-right{{text-align:right}}.pagebreak{{height:0;border-top:1px solid #ccc;width:100%}}.heading{{font-size:1em;font-weight:700}}.italic{{font-size:1em;font-style:italic;font-weight:400}}.box{{display:inline-block;width:{width}ch;max-width:100%;vertical-align:top;margin:0}}.code{{background-color:#f4f5f6;box-shadow:0 0 0 .5rem #f4f5f6;z-layer:-1;border-radius:4px}}.toc-row{{display:flex;width:100%}}.toc-line{{flex-grow:1;height:.5rem;border-bottom:1px solid #ccc;margin:0 .5rem}}div{{margin:0;padding:0;border:0;box-sizing:border-box}}p{{margin:0;padding:0;border:0;box-sizing:border-box}}</style>",
-                ));
+        let _ = write!(
+            final_html,
+            "<title>{}</title><style>body{{font-family:monospace}}.main{{max-width:{width}ch;width:100%;margin:0 auto}}.align-center{{text-align:center}}.align-right{{text-align:right}}.pagebreak{{height:0;border-top:1px solid #ccc;width:100%}}.heading{{font-size:1em;font-weight:700}}.italic{{font-size:1em;font-style:italic;font-weight:400}}.box{{display:inline-block;width:{width}ch;max-width:100%;vertical-align:top;margin:0}}.code{{background-color:#f4f5f6;box-shadow:0 0 0 .5rem #f4f5f6;z-layer:-1;border-radius:4px}}.toc-row{{display:flex;width:100%}}.toc-line{{flex-grow:1;height:.5rem;border-bottom:1px solid #ccc;margin:0 .5rem}}div{{margin:0;padding:0;border:0;box-sizing:border-box}}p{{margin:0;padding:0;border:0;box-sizing:border-box}}</style>",
+            util::escape(title)
+        );
         final_html.push_str("</head><body><div class=\"main\">");
         final_html.push_str(&content);
         final_html.push_str("</div></body></html>");

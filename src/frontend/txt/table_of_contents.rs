@@ -12,10 +12,10 @@ use crate::{
 pub struct TableOfContents {}
 
 impl TableOfContents {
-    pub fn new(tag: Tag) -> Self {
+    pub fn new(tag: &Tag) -> Self {
         assert!(matches!(tag, Tag::TableOfContents));
 
-        TableOfContents {}
+        Self {}
     }
 }
 

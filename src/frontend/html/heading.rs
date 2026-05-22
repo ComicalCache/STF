@@ -18,7 +18,7 @@ impl Heading {
         assert!(matches!(tag, Tag::Heading { .. }));
         let Tag::Heading { content } = tag else { unreachable!() };
 
-        Heading { content }
+        Self { content }
     }
 }
 

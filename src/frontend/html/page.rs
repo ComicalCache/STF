@@ -36,11 +36,11 @@ pub struct Page {
 }
 
 impl Page {
-    pub fn new(
+    pub const fn new(
         width: usize, max_lines: usize, min_header: usize, header_padding: usize, footnotes_padding: usize,
         min_footer: usize, footer_padding: usize,
     ) -> Self {
-        Page {
+        Self {
             width,
             max_lines,
             header: Vec::new(),

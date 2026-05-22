@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
@@ -20,7 +22,7 @@ impl Link {
         assert!(matches!(tag, Tag::Link { .. }));
         let Tag::Link { url, abbrev, content } = tag else { unreachable!() };
 
-        Link { url, abbrev, content }
+        Self { url, abbrev, content }
     }
 }
 
@@ -49,7 +51,7 @@ impl Component<HtmlContext, HtmlInstruction> for Link {
                     data.push_str(&util::escape(before));
                 }
                 if !inside.is_empty() {
-                    data.push_str(&format!("<a href=\"{}\">{}</a>", self.url, util::escape(inside)));
+                    let _ = write!(data, "<a href=\"{}\">{}</a>", self.url, util::escape(inside));
                 }
                 if !after.is_empty() {
                     data.push_str(&util::escape(after));

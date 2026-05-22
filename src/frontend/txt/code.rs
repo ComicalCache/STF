@@ -16,7 +16,7 @@ impl Code {
         assert!(matches!(tag, Tag::Code(_)));
         let Tag::Code(content) = tag else { unreachable!() };
 
-        Code { content }
+        Self { content }
     }
 }
 

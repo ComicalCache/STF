@@ -9,10 +9,10 @@ use crate::{
 pub struct Pagebreak {}
 
 impl Pagebreak {
-    pub fn new(tag: Tag) -> Self {
+    pub fn new(tag: &Tag) -> Self {
         assert!(matches!(tag, Tag::Pagebreak));
 
-        Pagebreak {}
+        Self {}
     }
 }
 

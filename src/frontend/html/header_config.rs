@@ -19,7 +19,7 @@ impl HeaderConfig {
         assert!(matches!(tag, Tag::HeaderConfig { .. }));
         let Tag::HeaderConfig { left, right } = tag else { unreachable!() };
 
-        HeaderConfig { left, right }
+        Self { left, right }
     }
 }
 
@@ -36,6 +36,6 @@ impl Component<HtmlContext, HtmlInstruction> for HeaderConfig {
             })
             .collect();
 
-        ctx.header = Some(Header { left, right })
+        ctx.header = Some(Header { left, right });
     }
 }

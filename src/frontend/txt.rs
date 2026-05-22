@@ -41,8 +41,8 @@ pub struct TxtContext {
 }
 
 impl TxtContext {
-    fn new(width: usize, max_lines: usize) -> Self {
-        TxtContext { width, max_lines, header: None, headings: Vec::new(), doc: Document::new() }
+    const fn new(width: usize, max_lines: usize) -> Self {
+        Self { width, max_lines, header: None, headings: Vec::new(), doc: Document::new() }
     }
 
     fn new_page(&self) -> Page {
@@ -95,7 +95,7 @@ pub enum TxtInstruction {
     Pagebreak,
     /// Adds a line of padding.
     Padding,
-    /// Registers a ToC entry at the current page.
+    /// Registers a Table of Contents entry at the current page.
     RegisterToC(String),
 }
 
@@ -107,15 +107,16 @@ pub struct Txt {
 }
 
 impl Txt {
+    #[allow(clippy::too_many_lines)]
     pub fn generate(tags: impl Iterator<Item = Tag>, width: usize, max_lines: usize) -> String {
-        let mut txt = Txt {
+        let mut txt = Self {
             components: tags
                 .map(|tag| match tag {
                     Tag::Cover { .. } => Box::new(Cover::new(tag)) as TxtComponent,
                     Tag::HeaderConfig { .. } => Box::new(HeaderConfig::new(tag)) as TxtComponent,
-                    Tag::TableOfContents => Box::new(TableOfContents::new(tag)) as TxtComponent,
-                    Tag::Linebreak => Box::new(Linebreak::new(tag)) as TxtComponent,
-                    Tag::Pagebreak => Box::new(Pagebreak::new(tag)) as TxtComponent,
+                    Tag::TableOfContents => Box::new(TableOfContents::new(&tag)) as TxtComponent,
+                    Tag::Linebreak => Box::new(Linebreak::new(&tag)) as TxtComponent,
+                    Tag::Pagebreak => Box::new(Pagebreak::new(&tag)) as TxtComponent,
                     Tag::Heading { .. } => Box::new(Heading::new(tag)) as TxtComponent,
                     Tag::Text(_) => Box::new(Text::new(tag)) as TxtComponent,
                     Tag::Code(_) => Box::new(Code::new(tag)) as TxtComponent,
@@ -232,7 +233,7 @@ impl Txt {
             let mut lines = Vec::with_capacity(page.max_lines);
 
             // Remove trailing whitespace.
-            lines.extend(page.header().iter().cloned().map(|line| String::from(line.trim_end())));
+            lines.extend(page.header().iter().map(|line| String::from(line.trim_end())));
             // Pad to the minimum header lines.
             for _ in page.header().len()..page.min_header {
                 lines.push(String::new());
@@ -242,7 +243,7 @@ impl Txt {
             }
 
             // Remove trailing whitespace.
-            lines.extend(page.body().iter().cloned().map(|line| String::from(line.trim_end())));
+            lines.extend(page.body().iter().map(|line| String::from(line.trim_end())));
 
             // Padding.
             for _ in 0..page.max_lines.saturating_sub(page.lines()) {
@@ -253,7 +254,7 @@ impl Txt {
                 lines.push(String::new());
             }
             // Remove trailing whitespace.
-            lines.extend(page.footnotes().iter().cloned().map(|line| String::from(line.trim_end())));
+            lines.extend(page.footnotes().iter().map(|line| String::from(line.trim_end())));
 
             for _ in 0..page.footer_padding {
                 lines.push(String::new());
@@ -263,12 +264,12 @@ impl Txt {
                 lines.push(String::new());
             }
             // Remove trailing whitespace.
-            lines.extend(page.footer().iter().cloned().map(|line| String::from(line.trim_end())));
+            lines.extend(page.footer().iter().map(|line| String::from(line.trim_end())));
 
             lines.join("\n")
         };
 
-        let cover = txt.ctx.doc.cover.map(|page| assemble(&page) + "\n\x0c\n").unwrap_or(String::new());
+        let cover = txt.ctx.doc.cover.map(|page| assemble(&page) + "\n\x0c\n").unwrap_or_default();
         let pages = txt.ctx.doc.pages.iter().map(assemble).collect::<Vec<String>>().join("\n\x0c\n");
 
         cover + &pages

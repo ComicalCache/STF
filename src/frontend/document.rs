@@ -4,5 +4,5 @@ pub struct Document<Page> {
 }
 
 impl<Page> Document<Page> {
-    pub fn new() -> Self { Document { cover: None, pages: Vec::new() } }
+    pub const fn new() -> Self { Self { cover: None, pages: Vec::new() } }
 }

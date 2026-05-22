@@ -35,7 +35,7 @@ fn main() -> Result<(), usize> {
     let title = format!("#include <cmath/{}>", filename.to_string_lossy());
 
     let triple = &args[2..];
-    if triple.len() % 3 != 0 {
+    if triple.len().is_multiple_of(3) {
         eprintln!("Expected optional arguments to be in triples of: <frontend> <width> <height>");
         return Err(1);
     }
@@ -48,19 +48,17 @@ fn main() -> Result<(), usize> {
         let width = &triple[1];
         let height = &triple[2];
 
-        let width: usize = match width.parse() {
-            Ok(width) => width,
-            Err(_) => {
-                eprintln!("Invalid width '{}', expected an integer", width);
-                return Err(1);
-            }
+        let width: usize = if let Ok(width) = width.parse() {
+            width
+        } else {
+            eprintln!("Invalid width '{width}', expected an integer");
+            return Err(1);
         };
-        let height: usize = match height.parse() {
-            Ok(height) => height,
-            Err(_) => {
-                eprintln!("Invalid height '{}', expected an integer", height);
-                return Err(1);
-            }
+        let height: usize = if let Ok(height) = height.parse() {
+            height
+        } else {
+            eprintln!("Invalid height '{height}', expected an integer");
+            return Err(1);
         };
 
         let mut out_path = path.clone();
@@ -70,7 +68,7 @@ fn main() -> Result<(), usize> {
             "html" => ("html", Html::generate(&title, tags.clone(), width, height)),
             "txt" => ("txt", Txt::generate(tags.clone(), width, height)),
             _ => {
-                eprintln!("Unknown frontend: '{}', expected 'html' or 'txt'", frontend);
+                eprintln!("Unknown frontend: '{frontend}', expected 'html' or 'txt'");
                 return Err(1);
             }
         };

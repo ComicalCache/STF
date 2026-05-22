@@ -17,7 +17,7 @@ impl Link {
         assert!(matches!(tag, Tag::Link { .. }));
         let Tag::Link { url, content, .. } = tag else { unreachable!() };
 
-        Link { url, content }
+        Self { url, content }
     }
 }
 

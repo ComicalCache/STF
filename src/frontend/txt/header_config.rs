@@ -17,7 +17,7 @@ impl HeaderConfig {
         assert!(matches!(tag, Tag::HeaderConfig { .. }));
         let Tag::HeaderConfig { left, right } = tag else { unreachable!() };
 
-        HeaderConfig { left, right }
+        Self { left, right }
     }
 }
 
@@ -26,6 +26,6 @@ impl Component<TxtContext, TxtInstruction> for HeaderConfig {
         let left: Vec<String> = util::wrap_paragraph(&self.left, ctx.width).map(String::from).collect();
         let right: Vec<String> = util::wrap_paragraph(&self.right, ctx.width).map(String::from).collect();
 
-        ctx.header = Some(Header { left, right })
+        ctx.header = Some(Header { left, right });
     }
 }
