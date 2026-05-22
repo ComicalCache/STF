@@ -1,6 +1,39 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-/// Collapses double newlines `\n\n` into a single `\n` and single newlines `\n` into a whitespace ` `.
+/// Converts an Arabic number into a Roman numeral String.
+pub fn to_roman(mut n: usize) -> String {
+    if n == 0 {
+        return "0".to_string();
+    }
+
+    let numerals = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+
+    let mut result = String::new();
+    for &(val, name) in &numerals {
+        while n >= val {
+            result.push_str(name);
+            n -= val;
+        }
+    }
+    result
+}
+
+/// Collapses double newlines `\n\n` into a single `\n` and single newlines `\n`
+/// into a whitespace ` `.
 pub fn collapse(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
 
@@ -37,19 +70,25 @@ pub fn escape(text: &str) -> String {
 
 /// Zero allocation paragraph word wrapping.
 ///
-/// Takes in `text` and returns an iterator over the wrapped lines where each line has less than `width` graphemes.
+/// Takes in `text` and returns an iterator over the wrapped lines where each
+/// line has less than `width` graphemes.
 ///
-/// Leading and trailing whitespace of wrapped lines is trimmed! Words that exceed `width` graphemes are greedily cut at
-/// the `width`'th grapheme, without regard for hyphenation! Correctly typed punctuation will never start a line!
+/// Leading and trailing whitespace of wrapped lines is trimmed! Words that
+/// exceed `width` graphemes are greedily cut at the `width`'th grapheme,
+/// without regard for hyphenation! Correctly typed punctuation will never start
+/// a line!
 ///
-/// The `Clone` trait is needed to duplicate the iterator. This is cheap since &str is cheap to clone.
+/// The `Clone` trait is needed to duplicate the iterator. This is cheap since
+/// &str is cheap to clone.
 pub fn wrap_paragraph(text: &str, width: usize) -> impl Iterator<Item = &str> + Clone + '_ { wrap(text, width, true) }
 
 /// Zero allocation code word wrapping.
 ///
-/// Takes in `code` and returns an iterator over the wrapped lines where each line has less than `width` graphemes.
+/// Takes in `code` and returns an iterator over the wrapped lines where each
+/// line has less than `width` graphemes.
 ///
-/// This function is identical to `wrap_paragraph` but doesn't trim leading whitespace for indentation!
+/// This function is identical to `wrap_paragraph` but doesn't trim leading
+/// whitespace for indentation!
 pub fn wrap_code(code: &str, width: usize) -> impl Iterator<Item = &str> + Clone + '_ { wrap(code, width, false) }
 
 fn wrap(text: &str, width: usize, skip_leading_whitespace: bool) -> impl Iterator<Item = &str> + Clone + '_ {

@@ -1,280 +1,276 @@
-use std::fmt::Write;
+mod code;
+mod cover;
+mod header_config;
+mod heading;
+mod linebreak;
+mod link;
+mod page;
+mod pagebreak;
+mod table_of_contents;
+mod text;
 
-use unicode_segmentation::UnicodeSegmentation;
+use crate::{
+    frontend::{
+        components::Component,
+        document::Document,
+        txt::{
+            code::Code, cover::Cover, header_config::HeaderConfig, heading::Heading, linebreak::Linebreak, link::Link,
+            page::Page, pagebreak::Pagebreak, table_of_contents::TableOfContents, text::Text,
+        },
+    },
+    stf::Tag,
+};
 
-use crate::{stf::Tag, util};
-
-#[derive(Default)]
-struct Header<'s> {
-    date: Vec<&'s str>,
-    title: Vec<&'s str>,
+struct Header {
+    left: Vec<String>,
+    right: Vec<String>,
 }
 
-#[derive(Default)]
-pub struct Txt<'s> {
-    /// Width of a line in Unicode graphemes.
-    line_width: usize,
-    /// Total available rows in a page including headers, contents and page numbers.
-    page_rows: usize,
-    header_rows: usize,
-    content_rows: usize,
-    page_number_rows: usize,
+pub struct TxtContext {
+    /// Width in graphemes.
+    width: usize,
+    /// Maximum number of lines per page (including header and footer).
+    max_lines: usize,
 
-    /// Absolute current page row.
-    curr_page_row: usize,
+    header: Option<Header>,
 
-    curr_page_number: usize,
-    header: Option<Header<'s>>,
+    /// Headings on page with title.
+    headings: Vec<(usize, String)>,
 
-    headings: Vec<(String, usize)>,
+    doc: Document<Page>,
 }
 
-impl<'s> Txt<'s> {
-    pub fn generate(tags: impl Iterator<Item = Tag<'s>> + Clone + 's, line_width: usize, page_rows: usize) -> String {
-        let mut txt =
-            Txt { line_width, page_rows, content_rows: page_rows - 2, page_number_rows: 2, ..Default::default() };
-
-        let mut buff = String::new();
-        let mut toc_idx: Option<usize> = None;
-        let mut toc_curr_page_row: Option<usize> = None;
-
-        for tag in tags {
-            match tag {
-                Tag::Cover { .. } => txt.cover(&mut buff, &tag),
-                Tag::HeaderConfig { .. } => txt.header_config(&tag),
-                Tag::TableOfContents => {
-                    toc_idx = Some(buff.len());
-                    toc_curr_page_row = Some(txt.curr_page_row);
-                }
-                Tag::Header => txt.header(&mut buff),
-                Tag::Linebreak => txt.linebreak(&mut buff, true, true, true),
-                Tag::Pagebreak => txt.pagebreak(&mut buff, true, true, true),
-                Tag::Heading { .. } => txt.heading(&mut buff, tag),
-                Tag::Text { .. } => txt.text(&mut buff, &tag),
-                Tag::Code { .. } => txt.code(&mut buff, &tag),
-                Tag::Link { .. } => txt.link(&mut buff, &tag),
-            }
-        }
-        txt.pagebreak(&mut buff, true, false, false);
-
-        if let (Some(idx), Some(curr_page_row)) = (toc_idx, toc_curr_page_row) {
-            txt.curr_page_row = curr_page_row;
-
-            let tail = buff.split_off(idx);
-            txt.table_of_contents(&mut buff);
-            buff.push_str(&tail);
-        }
-
-        buff
+impl TxtContext {
+    fn new(width: usize, max_lines: usize) -> Self {
+        TxtContext { width, max_lines, header: None, headings: Vec::new(), doc: Document::new() }
     }
 
-    fn cover(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Cover { title, author, date, notes } = tag else { unreachable!() };
+    fn new_page(&self) -> Page {
+        let mut page = Page::new(
+            self.width,
+            self.max_lines,
+            self.header.as_ref().map_or(0, |header| header.left.len() + header.right.len()),
+            1,
+            1,
+            1, // The line number.
+            1,
+        );
 
-        // The title starts 25% down the page.
-        for _ in 0..(self.page_rows as f32 * 0.25) as usize {
-            buff.push('\n');
-            self.curr_page_row += 1;
-        }
-
-        for line in util::wrap_paragraph(title, self.line_width) {
-            let _ = writeln!(buff, "{line:^width$}", width = self.line_width);
-            self.curr_page_row += 1;
-        }
-
-        // One line padding between title and author.
-        buff.push('\n');
-        self.curr_page_row += 1;
-
-        for line in util::wrap_paragraph(author, self.line_width) {
-            let _ = writeln!(buff, "{line:^width$}", width = self.line_width);
-            self.curr_page_row += 1;
-        }
-
-        // The date is right bellow the author.
-        for line in util::wrap_paragraph(date, self.line_width) {
-            let _ = writeln!(buff, "{line:^width$}", width = self.line_width);
-            self.curr_page_row += 1;
-        }
-
-        let mut notes_lines = 0;
-        let notes = util::wrap_paragraph(notes, self.line_width).fold(String::new(), |mut acc, line| {
-            let _ = writeln!(acc, "{line:^width$}", width = self.line_width);
-            notes_lines += 1;
-
-            acc
-        });
-
-        // Pad the page until the notes will leave exactly five empty trailing line on the page.
-        let notes_pad = self.page_rows - self.curr_page_row - notes_lines - 5;
-        for _ in 0..notes_pad {
-            buff.push('\n');
-            self.curr_page_row += 1;
-        }
-
-        buff.push_str(&notes);
-        self.curr_page_row += notes_lines;
-
-        // Three lines padding to the footer.
-        for _ in 0..3 {
-            buff.push('\n');
-            self.curr_page_row += 1;
-        }
-
-        // Add a pagebreak.
-        self.pagebreak(buff, false, true, true);
-    }
-
-    fn header_config(&mut self, tag: &Tag<'s>) {
-        let Tag::HeaderConfig { date, title } = tag else { unreachable!() };
-
-        let date: Vec<&'s str> = util::wrap_paragraph(date, self.line_width).collect();
-        let title: Vec<&'s str> = util::wrap_paragraph(title, self.line_width).collect();
-        let header = Header { date, title };
-
-        self.header_rows = header.date.len() + header.title.len() + 1;
-        self.content_rows -= self.header_rows;
-
-        self.header = Some(header);
-    }
-
-    fn table_of_contents(&mut self, buff: &mut String) {
-        if self.headings.is_empty() {
-            return;
-        }
-
-        let _ = write!(buff, "{:^width$}", "Table Of Contents", width = self.line_width);
-        self.linebreak(buff, false, false, true);
-
-        let max_page_num_width = self.headings.last().unwrap().1.checked_ilog10().unwrap_or(0) as usize + 1;
-
-        let mut last_line = "";
-        // Cheap clone because of &str.
-        for (title, page) in &self.headings.clone() {
-            // Minus three for enough space for at least one dot.
-            for line in util::wrap_paragraph(title, self.line_width - max_page_num_width - 3) {
-                self.linebreak(buff, false, false, true);
-
-                let _ = write!(buff, "{line}");
-
-                last_line = line;
-            }
-
-            let last_line_graphemes = last_line.graphemes(true).count();
-            let _ = write!(
-                buff,
-                " {:.>width$} {page:>max_page_num_width$}",
-                "",
-                width = self.line_width - last_line_graphemes - max_page_num_width - 2
-            );
-        }
-
-        self.pagebreak(buff, false, false, true);
-    }
-
-    fn header(&mut self, buff: &mut String) {
         if let Some(header) = &self.header {
-            // TODO: add error if write_heder == true but no header was specified.
-
-            for line in &header.date {
-                let _ = writeln!(buff, "{line}");
-                self.curr_page_row += 1;
-            }
-            for line in &header.title {
-                let _ = writeln!(buff, "{line:>width$}", width = self.line_width);
-                self.curr_page_row += 1;
+            for line in &header.left {
+                page.push_header(line.clone());
             }
 
-            // Add a line of padding bellow the header.
-            buff.push('\n');
-            self.curr_page_row += 1;
+            for line in &header.right {
+                page.push_header(format!("{line:>width$}", width = self.width));
+            }
         }
+
+        page
     }
 
-    fn linebreak(&mut self, buff: &mut String, write_page_number: bool, increase_page_count: bool, write_header: bool) {
-        buff.push('\n');
-        self.curr_page_row += 1;
-
-        if self.curr_page_row == self.header_rows + self.content_rows {
-            self.pagebreak(buff, write_page_number, increase_page_count, write_header);
+    fn last_page(&mut self) -> &mut Page {
+        if self.doc.pages.is_empty() {
+            self.doc.pages.push(self.new_page());
         }
+
+        self.doc.pages.last_mut().unwrap()
     }
 
-    fn pagebreak(&mut self, buff: &mut String, write_page_number: bool, increase_page_count: bool, write_header: bool) {
-        while self.curr_page_row < self.page_rows - self.page_number_rows {
-            buff.push('\n');
-            self.curr_page_row += 1;
-        }
-
-        // Add one line of padding above the page count.
-        buff.push('\n');
-
-        if write_page_number {
-            let _ = writeln!(buff, "{:>width$}", format!("[Page {}]", self.curr_page_number), width = self.line_width);
-        } else {
-            buff.push('\n');
-        }
-
-        // Inserts form feed and newline as pagebreak.
-        buff.push('\x0c');
-        buff.push('\n');
-        self.curr_page_row = 0;
-
-        if increase_page_count {
-            self.curr_page_number += 1;
-        }
-
-        if write_header {
-            self.header(buff);
-        }
+    fn break_page(&mut self) -> &mut Page {
+        self.doc.pages.push(self.new_page());
+        self.doc.pages.last_mut().unwrap()
     }
+}
 
-    fn heading(&mut self, buff: &mut String, tag: Tag<'s>) {
-        let Tag::Heading { content } = tag else { unreachable!() };
+pub enum TxtInstruction {
+    /// A single line.
+    Line(String),
+    /// A block that must not be broken by a pagebreak.
+    Block(Vec<String>),
+    /// A paragraph that may not have a lone line on the previous or following
+    /// page.
+    Paragraph(Vec<String>),
+    /// Creates a new page.
+    Pagebreak,
+    /// Adds a line of padding.
+    Padding,
+    /// Registers a ToC entry at the current page.
+    RegisterToC(String),
+}
 
-        // Store the page number of where the heading starts.
-        let page = self.curr_page_number;
+type TxtComponent = Box<dyn Component<TxtContext, TxtInstruction>>;
 
-        for line in util::wrap_paragraph(&content, self.line_width) {
-            let _ = write!(buff, "{line:^width$}", width = self.line_width);
-            self.linebreak(buff, true, true, true);
+pub struct Txt {
+    components: Vec<TxtComponent>,
+    ctx: TxtContext,
+}
+
+impl Txt {
+    pub fn generate(tags: impl Iterator<Item = Tag>, width: usize, max_lines: usize) -> String {
+        let mut txt = Txt {
+            components: tags
+                .map(|tag| match tag {
+                    Tag::Cover { .. } => Box::new(Cover::new(tag)) as TxtComponent,
+                    Tag::HeaderConfig { .. } => Box::new(HeaderConfig::new(tag)) as TxtComponent,
+                    Tag::TableOfContents => Box::new(TableOfContents::new(tag)) as TxtComponent,
+                    Tag::Linebreak => Box::new(Linebreak::new(tag)) as TxtComponent,
+                    Tag::Pagebreak => Box::new(Pagebreak::new(tag)) as TxtComponent,
+                    Tag::Heading { .. } => Box::new(Heading::new(tag)) as TxtComponent,
+                    Tag::Text(_) => Box::new(Text::new(tag)) as TxtComponent,
+                    Tag::Code(_) => Box::new(Code::new(tag)) as TxtComponent,
+                    Tag::Link { .. } => Box::new(Link::new(tag)) as TxtComponent,
+                })
+                .collect(),
+            ctx: TxtContext::new(width, max_lines),
+        };
+
+        // First pass for Components that need setup.
+        for component in &mut txt.components {
+            component.configure(&mut txt.ctx);
         }
 
-        self.headings.push((content, page));
+        // Second pass for Components that can write their contents.
+        let mut components = std::mem::take(&mut txt.components);
+        for component in &mut components {
+            let Some(instructions) = component.generate(&mut txt.ctx) else {
+                continue;
+            };
 
-        // Padding bellow.
-        self.linebreak(buff, true, true, true);
-    }
+            for instruction in instructions {
+                match instruction {
+                    TxtInstruction::Line(data) => {
+                        let page = txt.ctx.last_page();
 
-    fn text(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Text { content } = tag else { unreachable!() };
+                        if page.fits(1) {
+                            page.push_body(data);
+                        } else {
+                            txt.ctx.break_page().push_body(data);
+                        }
+                    }
+                    TxtInstruction::Block(lines) => {
+                        assert!(lines.len() <= max_lines);
 
-        for line in util::wrap_paragraph(content, self.line_width) {
-            buff.push_str(line);
-            self.linebreak(buff, true, true, true);
+                        let page = txt.ctx.last_page();
+
+                        if page.fits(lines.len()) {
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        } else {
+                            let page = txt.ctx.break_page();
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        }
+                    }
+                    TxtInstruction::Paragraph(mut lines) => {
+                        let page = txt.ctx.last_page();
+
+                        if page.fits(lines.len()) {
+                            // All lines of the paragraph fit on the current page.
+
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        } else if page.fits(lines.len().saturating_sub(2)) {
+                            // Avoid having a single trailing line cause a page break, break with two
+                            // trailing lines instead.
+
+                            for line in lines.drain(0..lines.len().saturating_sub(2)) {
+                                page.push_body(line);
+                            }
+                            let page = txt.ctx.break_page();
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        } else if page.fits(1) {
+                            // Avoid having a single leading line cause a page
+                            // break, break immediately.
+
+                            let page = txt.ctx.break_page();
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        }
+                    }
+                    TxtInstruction::Pagebreak => {
+                        txt.ctx.break_page();
+                    }
+                    TxtInstruction::Padding => {
+                        let page = txt.ctx.last_page();
+
+                        if !page.body().is_empty() {
+                            if page.fits(1) {
+                                page.push_body(String::new());
+                            } else {
+                                txt.ctx.break_page();
+                            }
+                        }
+                    }
+                    TxtInstruction::RegisterToC(title) => txt.ctx.headings.push((txt.ctx.doc.pages.len(), title)),
+                }
+            }
         }
-    }
+        txt.components = components;
 
-    fn code(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Code { content } = tag else { unreachable!() };
-
-        for line in util::wrap_code(content, self.line_width) {
-            buff.push_str(line);
-            self.linebreak(buff, true, true, true);
-        }
-    }
-
-    fn link(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Link { url, content, .. } = tag else { unreachable!() };
-
-        if content.is_empty() {
-            return;
+        // Add page numbers generated pages.
+        let width = txt.ctx.width;
+        for (idx, page) in txt.ctx.doc.pages.iter_mut().enumerate() {
+            let page_nr = format!("[Page {}]", idx + 1);
+            page.push_footer(format!("{page_nr:>width$}"));
         }
 
-        let full_text = format!("{content}: {url}");
-        for line in util::wrap_paragraph(&full_text, self.line_width) {
-            buff.push_str(line);
-            self.linebreak(buff, true, true, true);
+        // Third pass for Components that need information added by other, already
+        // lay-outed Components.
+        for component in &mut txt.components {
+            component.modify(&mut txt.ctx);
         }
+
+        // Assemble the Document into a String.
+        let assemble = |page: &Page| {
+            let mut lines = Vec::with_capacity(page.max_lines);
+
+            // Remove trailing whitespace.
+            lines.extend(page.header().iter().cloned().map(|line| String::from(line.trim_end())));
+            // Pad to the minimum header lines.
+            for _ in page.header().len()..page.min_header {
+                lines.push(String::new());
+            }
+            for _ in 0..page.header_padding {
+                lines.push(String::new());
+            }
+
+            // Remove trailing whitespace.
+            lines.extend(page.body().iter().cloned().map(|line| String::from(line.trim_end())));
+
+            // Padding.
+            for _ in 0..page.max_lines.saturating_sub(page.lines()) {
+                lines.push(String::new());
+            }
+
+            for _ in 0..page.footnotes_padding {
+                lines.push(String::new());
+            }
+            // Remove trailing whitespace.
+            lines.extend(page.footnotes().iter().cloned().map(|line| String::from(line.trim_end())));
+
+            for _ in 0..page.footer_padding {
+                lines.push(String::new());
+            }
+            // Pad to the minimum footer lines.
+            for _ in page.footer().len()..page.min_footer {
+                lines.push(String::new());
+            }
+            // Remove trailing whitespace.
+            lines.extend(page.footer().iter().cloned().map(|line| String::from(line.trim_end())));
+
+            lines.join("\n")
+        };
+
+        let cover = txt.ctx.doc.cover.map(|page| assemble(&page) + "\n\x0c\n").unwrap_or(String::new());
+        let pages = txt.ctx.doc.pages.iter().map(assemble).collect::<Vec<String>>().join("\n\x0c\n");
+
+        cover + &pages
     }
 }

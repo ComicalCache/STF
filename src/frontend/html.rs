@@ -1,319 +1,307 @@
-use std::fmt::Write;
+mod code;
+mod cover;
+mod header_config;
+mod heading;
+mod linebreak;
+mod link;
+mod page;
+mod pagebreak;
+mod table_of_contents;
+mod text;
 
-use crate::{stf::Tag, util};
+use unicode_segmentation::UnicodeSegmentation;
 
-#[derive(Default)]
-struct Header<'s> {
-    date: Vec<&'s str>,
-    title: Vec<&'s str>,
+use crate::{
+    frontend::{
+        components::Component,
+        document::Document,
+        html::{
+            code::Code,
+            cover::Cover,
+            header_config::HeaderConfig,
+            heading::Heading,
+            linebreak::Linebreak,
+            link::Link,
+            page::{Line, Page},
+            pagebreak::Pagebreak,
+            table_of_contents::TableOfContents,
+            text::Text,
+        },
+    },
+    stf::Tag,
+    util,
+};
+
+struct Header {
+    left: Vec<Line>,
+    right: Vec<Line>,
 }
 
-#[derive(Default)]
-pub struct Html<'s> {
-    /// Width of a line in Unicode graphemes.
-    line_width: usize,
-    /// Total available rows in a page including headers, contents and page numbers.
-    page_rows: usize,
-    header_rows: usize,
-    content_rows: usize,
-    page_number_rows: usize,
+pub struct HtmlContext {
+    /// Width in graphemes.
+    width: usize,
+    /// Maximum number of lines per page (including header and footer).
+    max_lines: usize,
 
-    /// Absolute current page row.
-    curr_page_row: usize,
+    header: Option<Header>,
 
-    curr_page_number: usize,
-    header: Option<Header<'s>>,
+    /// Headings on page with title.
+    headings: Vec<(usize, String)>,
 
-    headings: Vec<(String, usize)>,
+    doc: Document<Page>,
 }
 
-impl<'s> Html<'s> {
-    pub fn generate(
-        title: &str, tags: impl Iterator<Item = Tag<'s>> + Clone + 's, line_len: usize, page_len: usize,
-    ) -> String {
+impl HtmlContext {
+    fn new(width: usize, max_lines: usize) -> Self {
+        HtmlContext { width, max_lines, header: None, headings: Vec::new(), doc: Document::new() }
+    }
+
+    fn new_page(&self) -> Page {
+        let mut page = Page::new(
+            self.width,
+            self.max_lines,
+            self.header.as_ref().map_or(0, |header| header.left.len() + header.right.len()),
+            1,
+            1,
+            1, // The line number.
+            1,
+        );
+
+        if let Some(header) = &self.header {
+            for line in &header.left {
+                page.push_header(line.clone());
+            }
+
+            for line in &header.right {
+                page.push_header(line.clone());
+            }
+        }
+
+        page
+    }
+
+    fn last_page(&mut self) -> &mut Page {
+        if self.doc.pages.is_empty() {
+            self.doc.pages.push(self.new_page());
+        }
+
+        self.doc.pages.last_mut().unwrap()
+    }
+
+    fn break_page(&mut self) -> &mut Page {
+        self.doc.pages.push(self.new_page());
+        self.doc.pages.last_mut().unwrap()
+    }
+}
+
+pub enum HtmlInstruction {
+    /// A single line.
+    Line(Line),
+    /// A block that must not be broken by a pagebreak.
+    Block(Vec<Line>),
+    /// A paragraph that may not have a lone line on the previous or following
+    /// page.
+    Paragraph(Vec<Line>),
+    /// Creates a new page.
+    Pagebreak,
+    /// Adds a line of padding.
+    Padding,
+    /// Registers a ToC entry at the current page.
+    RegisterToC(String),
+}
+
+type HtmlComponent = Box<dyn Component<HtmlContext, HtmlInstruction>>;
+
+pub struct Html {
+    components: Vec<HtmlComponent>,
+    ctx: HtmlContext,
+}
+
+impl Html {
+    pub fn generate(title: &str, tags: impl Iterator<Item = Tag>, width: usize, max_lines: usize) -> String {
         let mut html = Html {
-            line_width: line_len,
-            page_rows: page_len,
-            content_rows: page_len - 2,
-            page_number_rows: 2,
-            ..Default::default()
+            components: tags
+                .map(|tag| match tag {
+                    Tag::Cover { .. } => Box::new(Cover::new(tag)) as HtmlComponent,
+                    Tag::HeaderConfig { .. } => Box::new(HeaderConfig::new(tag)) as HtmlComponent,
+                    Tag::TableOfContents => Box::new(TableOfContents::new(tag)) as HtmlComponent,
+                    Tag::Linebreak => Box::new(Linebreak::new(tag)) as HtmlComponent,
+                    Tag::Pagebreak => Box::new(Pagebreak::new(tag)) as HtmlComponent,
+                    Tag::Heading { .. } => Box::new(Heading::new(tag)) as HtmlComponent,
+                    Tag::Text(_) => Box::new(Text::new(tag)) as HtmlComponent,
+                    Tag::Code(_) => Box::new(Code::new(tag)) as HtmlComponent,
+                    Tag::Link { .. } => Box::new(Link::new(tag)) as HtmlComponent,
+                })
+                .collect(),
+            ctx: HtmlContext::new(width, max_lines),
         };
 
-        let mut buff = String::new();
+        // First pass for Components that need setup.
+        for component in &mut html.components {
+            component.configure(&mut html.ctx);
+        }
 
-        buff.push_str("<!DOCTYPE html><html><head><meta charset=\"UTF-8\">");
-        let _ = writeln!(buff, "<title>{}</title>", util::escape(title));
-        let _ = writeln!(
-            buff,
-            "<style>body{{font-family:monospace}}.main{{max-width:{width}ch;width:100%;margin:0 auto}}.align-center{{text-align:center}}.align-right{{text-align:right}}.pagebreak{{height:0;border-top:1px solid #ccc;width:100%}}.heading{{font-size:1em;font-weight:700}}.italic{{font-size:1em;font-style:italic;font-weight:400}}.box{{display:inline-block;width:{width}ch;max-width:100%;vertical-align:top;margin:0}}.code{{background-color:#f4f5f6;box-shadow:0 0 0 .5rem #f4f5f6;z-layer:-1;border-radius:4px}}.toc-row{{display:flex;width:100%}}.toc-line{{flex-grow:1;height:.5rem;border-bottom:1px solid #ccc;margin:0 .5rem}}div{{margin:0;padding:0;border:0;box-sizing:border-box}}p{{margin:0;padding:0;border:0;box-sizing:border-box}}</style>",
-            width = html.line_width
-        );
-        buff.push_str("<div class=\"main\">");
+        // Second pass for Components that can write their contents.
+        let mut components = std::mem::take(&mut html.components);
+        for component in &mut components {
+            let Some(instructions) = component.generate(&mut html.ctx) else {
+                continue;
+            };
 
-        let mut toc_idx: Option<usize> = None;
-        let mut toc_curr_page_row: Option<usize> = None;
+            for instruction in instructions {
+                match instruction {
+                    HtmlInstruction::Line(data) => {
+                        let page = html.ctx.last_page();
 
-        for tag in tags {
-            match tag {
-                Tag::Cover { .. } => html.cover(&mut buff, &tag),
-                Tag::HeaderConfig { .. } => html.header_config(&tag),
-                Tag::TableOfContents => {
-                    toc_idx = Some(buff.len());
-                    toc_curr_page_row = Some(html.curr_page_row);
+                        if page.fits(1) {
+                            page.push_body(data);
+                        } else {
+                            html.ctx.break_page().push_body(data);
+                        }
+                    }
+                    HtmlInstruction::Block(lines) => {
+                        assert!(lines.len() <= max_lines);
+
+                        let page = html.ctx.last_page();
+
+                        if page.fits(lines.len()) {
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        } else {
+                            let page = html.ctx.break_page();
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        }
+                    }
+                    HtmlInstruction::Paragraph(mut lines) => {
+                        let page = html.ctx.last_page();
+
+                        if page.fits(lines.len()) {
+                            // All lines of the paragraph fit on the current page.
+
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        } else if page.fits(lines.len().saturating_sub(2)) {
+                            // Avoid having a single trailing line cause a page break, break with two
+                            // trailing lines instead.
+
+                            for line in lines.drain(0..lines.len().saturating_sub(2)) {
+                                page.push_body(line);
+                            }
+                            let page = html.ctx.break_page();
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        } else if page.fits(1) {
+                            // Avoid having a single leading line cause a page
+                            // break, break immediately.
+
+                            let page = html.ctx.break_page();
+                            for line in lines {
+                                page.push_body(line);
+                            }
+                        }
+                    }
+                    HtmlInstruction::Pagebreak => {
+                        html.ctx.break_page();
+                    }
+                    HtmlInstruction::Padding => {
+                        let page = html.ctx.last_page();
+
+                        if !page.body().is_empty() {
+                            if page.fits(1) {
+                                page.push_body(Line { width: 0, data: String::from("<br>") });
+                            } else {
+                                html.ctx.break_page();
+                            }
+                        }
+                    }
+                    HtmlInstruction::RegisterToC(title) => html.ctx.headings.push((html.ctx.doc.pages.len(), title)),
                 }
-                Tag::Header => html.header(&mut buff),
-                Tag::Linebreak => html.linebreak(&mut buff, true, true, true),
-                Tag::Pagebreak => html.pagebreak(&mut buff, true, true, true),
-                Tag::Heading { .. } => html.heading(&mut buff, tag),
-                Tag::Text { .. } => html.text(&mut buff, &tag),
-                Tag::Code { .. } => html.code(&mut buff, &tag),
-                Tag::Link { .. } => html.link(&mut buff, &tag),
             }
         }
-        html.pagebreak(&mut buff, true, false, false);
+        html.components = components;
 
-        if let (Some(idx), Some(curr_page_row)) = (toc_idx, toc_curr_page_row) {
-            html.curr_page_row = curr_page_row;
-
-            let tail = buff.split_off(idx);
-            html.table_of_contents(&mut buff);
-            buff.push_str(&tail);
+        // Add page numbers generated pages.
+        let width = html.ctx.width;
+        for (idx, page) in html.ctx.doc.pages.iter_mut().enumerate() {
+            let page_nr = format!("[Page {}]", idx + 1);
+            let width = page_nr.graphemes(true).count();
+            page.push_footer(Line { width, data: format!("<p class=\"align-right\">{page_nr}</p>") });
         }
 
-        buff.push_str("</div></body></html>");
-        buff
-    }
-
-    fn cover(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Cover { title, author, date, notes } = tag else { unreachable!() };
-
-        // The title starts 25% down the page.
-        for _ in 0..(self.page_rows as f32 * 0.25) as usize {
-            buff.push_str("<br>");
-            self.curr_page_row += 1;
+        // Third pass for Components that need information added by other, already
+        // lay-outed Components.
+        for component in &mut html.components {
+            component.modify(&mut html.ctx);
         }
 
-        for line in util::wrap_paragraph(title, self.line_width) {
-            let _ = write!(buff, "<p class=\"align-center heading\">{}</p>", util::escape(line));
-            self.curr_page_row += 1;
-        }
+        // Assemble the Document into a String.
+        let assemble = |page: &Page| {
+            let mut lines = Vec::with_capacity(page.max_lines);
 
-        // One line padding between title and author.
-        buff.push_str("<br>");
-        self.curr_page_row += 1;
-
-        for line in util::wrap_paragraph(author, self.line_width) {
-            let _ = write!(buff, "<p class=\"align-center italic\">{}</p>", util::escape(line));
-            self.curr_page_row += 1;
-        }
-
-        // The date is right bellow the author.
-        for line in util::wrap_paragraph(date, self.line_width) {
-            let _ = write!(buff, "<p class=\"align-center\">{}</p>", util::escape(line));
-            self.curr_page_row += 1;
-        }
-
-        let mut notes_lines = 0;
-        let notes = util::wrap_paragraph(notes, self.line_width).fold(String::new(), |mut acc, line| {
-            let _ = write!(acc, "<p class=\"align-center\">{}</p>", util::escape(line));
-            notes_lines += 1;
-
-            acc
-        });
-
-        // Pad the page until the notes will leave exactly five empty trailing line on the page.
-        let notes_pad = self.page_rows - self.curr_page_row - notes_lines - 5;
-        for _ in 0..notes_pad {
-            buff.push_str("<br>");
-            self.curr_page_row += 1;
-        }
-
-        buff.push_str(&notes);
-        self.curr_page_row += notes_lines;
-
-        // Three lines padding to the footer.
-        for _ in 0..3 {
-            buff.push_str("<br>");
-            self.curr_page_row += 1;
-        }
-
-        // Add a pagebreak.
-        self.pagebreak(buff, false, true, true);
-    }
-
-    fn header_config(&mut self, tag: &Tag<'s>) {
-        let Tag::HeaderConfig { date, title } = tag else { unreachable!() };
-
-        let date: Vec<&'s str> = util::wrap_paragraph(date, self.line_width).collect();
-        let title: Vec<&'s str> = util::wrap_paragraph(title, self.line_width).collect();
-        let header = Header { date, title };
-
-        self.header_rows = header.date.len() + header.title.len() + 1;
-        self.content_rows -= self.header_rows;
-
-        self.header = Some(header);
-    }
-
-    fn table_of_contents(&mut self, buff: &mut String) {
-        if self.headings.is_empty() {
-            return;
-        }
-
-        buff.push_str("<span class=\"box heading align-center\">Table Of Contents</span>");
-        self.linebreak(buff, false, false, true);
-
-        let max_page_num_width = self.headings.last().unwrap().1.checked_ilog10().unwrap_or(0) as usize + 1;
-
-        let mut pre_last_line: usize = 0;
-        let mut last_line = "";
-        // Cheap clone because of &str.
-        for (title, page) in &self.headings.clone() {
-            // Minus three for enough space for at least one dot.
-            for line in util::wrap_paragraph(title, self.line_width - max_page_num_width - 3) {
-                self.linebreak(buff, false, false, true);
-
-                pre_last_line = buff.len();
-                let _ = write!(buff, "<span class=\"box\">{}</span>", util::escape(line));
-
-                last_line = line;
+            lines.extend(page.header().iter().cloned().map(|line| line.data.clone()));
+            // Pad to the minimum header lines.
+            for _ in page.header().len()..page.min_header {
+                lines.push(String::from("<br>"));
+            }
+            for _ in 0..page.header_padding {
+                lines.push(String::from("<br>"));
             }
 
-            buff.truncate(pre_last_line);
+            lines.extend(page.body().iter().cloned().map(|line| line.data.clone()));
 
-            let _ = write!(
-                buff,
-                "<div class=\"box\"><div class=\"toc-row\"><span>{}</span><span class=\"toc-line\"></span><span>{page:>max_page_num_width$}</span></div></div>",
-                util::escape(last_line),
-            );
-        }
-
-        self.pagebreak(buff, false, false, true);
-    }
-
-    fn header(&mut self, buff: &mut String) {
-        if let Some(header) = &self.header {
-            // TODO: add error if write_heder == true but no header was specified.
-
-            for line in &header.date {
-                let _ = write!(buff, "<p>{}</p>", util::escape(line));
-                self.curr_page_row += 1;
-            }
-            for line in &header.title {
-                let _ = write!(buff, "<p class=\"align-right italic\">{}</p>", util::escape(line));
-                self.curr_page_row += 1;
+            // Padding.
+            for _ in 0..page.max_lines.saturating_sub(page.lines()) {
+                lines.push(String::from("<br>"));
             }
 
-            // Add a line of padding bellow the header.
-            buff.push_str("<br>");
-            self.curr_page_row += 1;
-        }
-    }
-
-    fn linebreak(&mut self, buff: &mut String, write_page_number: bool, increase_page_count: bool, write_header: bool) {
-        buff.push_str("<br>");
-        self.curr_page_row += 1;
-
-        if self.curr_page_row == self.header_rows + self.content_rows {
-            self.pagebreak(buff, write_page_number, increase_page_count, write_header);
-        }
-    }
-
-    fn pagebreak(&mut self, buff: &mut String, write_page_number: bool, increase_page_count: bool, write_header: bool) {
-        while self.curr_page_row < self.page_rows - self.page_number_rows {
-            buff.push_str("<br>");
-            self.curr_page_row += 1;
-        }
-
-        // Add one line of padding above the page count.
-        buff.push_str("<br>");
-
-        if write_page_number {
-            let _ = write!(buff, "<p class=\"align-right\">[Page {}]</p>", self.curr_page_number);
-        } else {
-            buff.push_str("<br>");
-        }
-
-        buff.push_str("<br><div class=\"pagebreak\"></div><br>");
-        self.curr_page_row = 0;
-
-        if increase_page_count {
-            self.curr_page_number += 1;
-        }
-
-        if write_header {
-            self.header(buff);
-        }
-    }
-
-    fn heading(&mut self, buff: &mut String, tag: Tag<'s>) {
-        let Tag::Heading { content } = tag else { unreachable!() };
-
-        // Store the page number of where the heading starts.
-        let page = self.curr_page_number;
-
-        for line in util::wrap_paragraph(&content, self.line_width) {
-            let _ = write!(buff, "<span class=\"box heading align-center\">{}</span>", util::escape(line));
-            self.linebreak(buff, true, true, true);
-        }
-
-        self.headings.push((content, page));
-
-        // Padding bellow.
-        self.linebreak(buff, true, true, true);
-    }
-
-    fn text(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Text { content } = tag else { unreachable!() };
-
-        for line in util::wrap_paragraph(content, self.line_width) {
-            let _ = write!(buff, "<span>{}</span>", util::escape(line));
-            self.linebreak(buff, true, true, true);
-        }
-    }
-
-    fn code(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Code { content } = tag else { unreachable!() };
-
-        // Box to avoid leading <br>, but requires manual <br> at the end.
-        buff.push_str("<pre class=\"box code\">");
-        for line in util::wrap_code(content, self.line_width) {
-            let _ = write!(buff, "<code>{}</code>", util::escape(line));
-            self.linebreak(buff, true, true, true);
-        }
-        buff.push_str("</pre><br>");
-    }
-
-    fn link(&mut self, buff: &mut String, tag: &Tag<'_>) {
-        let Tag::Link { url, abbrev, content } = tag else { unreachable!() };
-
-        let text = format!("{} ({})", content, abbrev);
-
-        // Plus two for the space and opening bracket.
-        let abbrev_start = content.len() + 2;
-        let abbrev_end = abbrev_start + abbrev.len();
-
-        for line in util::wrap_paragraph(&text, self.line_width) {
-            let offset = line.as_ptr() as usize - text.as_ptr() as usize;
-
-            let start = (abbrev_start - offset).min(line.len());
-            let stop = (abbrev_end - offset).min(line.len());
-
-            let before = &line[..start];
-            let inside = &line[start..stop];
-            let after = &line[stop..];
-
-            buff.push_str("<span>");
-            if !before.is_empty() {
-                buff.push_str(&util::escape(before));
+            for _ in 0..page.footnotes_padding {
+                lines.push(String::from("<br>"));
             }
-            if !inside.is_empty() {
-                let _ = write!(buff, "<a href=\"{}\">{}</a>", url, util::escape(inside));
+            lines.extend(page.footnotes().iter().cloned().map(|line| line.data.clone()));
+
+            for _ in 0..page.footer_padding {
+                lines.push(String::from("<br>"));
             }
-            if !after.is_empty() {
-                buff.push_str(&util::escape(after));
+            // Pad to the minimum footer lines.
+            for _ in page.footer().len()..page.min_footer {
+                lines.push(String::from("<br>"));
             }
-            buff.push_str("</span>");
-            self.linebreak(buff, true, true, true);
-        }
+            lines.extend(page.footer().iter().cloned().map(|line| line.data.clone()));
+
+            lines.join("")
+        };
+
+        let cover = html
+            .ctx
+            .doc
+            .cover
+            .map(|page| assemble(&page) + "<br><div class=\"pagebreak\"></div><br>")
+            .unwrap_or(String::new());
+        let pages = html
+            .ctx
+            .doc
+            .pages
+            .iter()
+            .map(assemble)
+            .collect::<Vec<String>>()
+            .join("<br><div class=\"pagebreak\"></div><br>");
+        let content = cover + &pages + "<br><div class=\"pagebreak\"></div><br>";
+
+        let mut final_html = String::new();
+        final_html.push_str("<!DOCTYPE html><html><head><meta charset=\"UTF-8\">");
+        final_html.push_str(&format!("<title>{}</title>", util::escape(title)));
+        final_html.push_str(&format!(
+            "<style>body{{font-family:monospace}}.main{{max-width:{width}ch;width:100%;margin:0 auto}}.align-center{{text-align:center}}.align-right{{text-align:right}}.pagebreak{{height:0;border-top:1px solid #ccc;width:100%}}.heading{{font-size:1em;font-weight:700}}.italic{{font-size:1em;font-style:italic;font-weight:400}}.box{{display:inline-block;width:{width}ch;max-width:100%;vertical-align:top;margin:0}}.code{{background-color:#f4f5f6;box-shadow:0 0 0 .5rem #f4f5f6;z-layer:-1;border-radius:4px}}.toc-row{{display:flex;width:100%}}.toc-line{{flex-grow:1;height:.5rem;border-bottom:1px solid #ccc;margin:0 .5rem}}div{{margin:0;padding:0;border:0;box-sizing:border-box}}p{{margin:0;padding:0;border:0;box-sizing:border-box}}</style>",
+                ));
+        final_html.push_str("</head><body><div class=\"main\">");
+        final_html.push_str(&content);
+        final_html.push_str("</div></body></html>");
+
+        final_html
     }
 }
