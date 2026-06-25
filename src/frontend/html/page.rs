@@ -63,10 +63,12 @@ impl Page {
     /// Pushes a line into the header, asserting the grapheme width invariant.
     pub fn push_header(&mut self, line: Line) {
         assert!(line.width <= self.width);
-        assert!(self.lines() < self.max_lines);
         assert!(!line.data.contains('\n'));
 
         self.header.push(line);
+
+        // Smaller equals since self.lines() includes min_* linesp.
+        assert!(self.lines() <= self.max_lines);
     }
 
     /// Pushes a line into the body, asserting the grapheme width invariant.
@@ -91,10 +93,12 @@ impl Page {
     /// Pushes a line into the footer, asserting the grapheme width invariant.
     pub fn push_footer(&mut self, line: Line) {
         assert!(line.width <= self.width);
-        assert!(self.lines() < self.max_lines);
         assert!(!line.data.contains('\n'));
 
         self.footer.push(line);
+
+        // Smaller equals since self.lines() includes min_* linesp.
+        assert!(self.lines() <= self.max_lines);
     }
 
     /// Returns the number of filled lines on the page.

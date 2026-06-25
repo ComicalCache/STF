@@ -123,13 +123,25 @@ fn wrap(text: &str, width: usize, skip_leading_whitespace: bool) -> impl Iterato
             let mut chunk_count = token.graphemes(true).count();
             let mut bytes = token.len();
 
-            // Group trailing punctuation and symbols with the current token.
+            // Group punctuation and symbols with the current token.
+            let whitespace = token.chars().all(char::is_whitespace);
+            let mut alphanumeric = token.chars().any(char::is_alphanumeric);
             while let Some(&next_token) = tokens.peek() {
-                let whitespace = next_token.chars().all(char::is_whitespace);
-                let alphanumeric = next_token.chars().any(char::is_alphanumeric);
+                let next_whitespace = next_token.chars().all(char::is_whitespace);
+                let next_alphanumeric = next_token.chars().any(char::is_alphanumeric);
 
-                if whitespace || alphanumeric {
+                // Don't mix whitespace and non-whitespace.
+                if whitespace != next_whitespace {
                     break;
+                }
+
+                // Separate alphanumeric chunks.
+                if !whitespace && next_alphanumeric && alphanumeric {
+                    break;
+                }
+
+                if next_alphanumeric {
+                    alphanumeric = true;
                 }
 
                 chunk_count += next_token.graphemes(true).count();

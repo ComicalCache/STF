@@ -35,7 +35,7 @@ fn main() -> Result<(), usize> {
     let title = format!("#include <cmath/{}>", filename.to_string_lossy());
 
     let triple = &args[2..];
-    if triple.len().is_multiple_of(3) {
+    if !triple.len().is_multiple_of(3) {
         eprintln!("Expected optional arguments to be in triples of: <frontend> <width> <height>");
         return Err(1);
     }
